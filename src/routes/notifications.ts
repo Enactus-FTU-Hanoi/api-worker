@@ -1,0 +1,1 @@
+export { notificationRoutes } from './scores'

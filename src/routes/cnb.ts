@@ -1,0 +1,1 @@
+export { cnbRoutes } from './scores'

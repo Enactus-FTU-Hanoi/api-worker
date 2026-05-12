@@ -1,0 +1,1 @@
+export { scheduleRoutes } from './scores'

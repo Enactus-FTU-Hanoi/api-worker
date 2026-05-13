@@ -41,21 +41,27 @@ app.use('*', async (c, next) => {
   const origin = c.req.header('Origin')
   const requestHeaders = c.req.header('Access-Control-Request-Headers')
 
-  if (origin && allowedOrigins.has(origin)) {
-    if (c.req.method === 'OPTIONS') {
+  // Handle preflight requests
+  if (c.req.method === 'OPTIONS') {
+    if (origin && allowedOrigins.has(origin)) {
       return new Response(null, {
         status: 204,
         headers: buildCorsHeaders(origin, requestHeaders ?? null),
       })
     }
-
-    await next()
-    const corsHeaders = buildCorsHeaders(origin, requestHeaders ?? null)
-    corsHeaders.forEach((value, key) => c.res.headers.set(key, value))
-    return c.res
+    // Reject preflight requests from disallowed origins
+    return new Response(null, { status: 403 })
   }
 
+  // Process actual request
   await next()
+
+  // Apply CORS headers if origin is allowed
+  if (origin && allowedOrigins.has(origin)) {
+    const corsHeaders = buildCorsHeaders(origin, requestHeaders ?? null)
+    corsHeaders.forEach((value, key) => c.res.headers.set(key, value))
+  }
+
   return c.res
 })
 

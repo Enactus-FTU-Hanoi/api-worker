@@ -1,5 +1,4 @@
 import { Hono } from 'hono'
-import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { authRoutes } from './routes/auth'
 import { memberRoutes } from './routes/members'
@@ -18,18 +17,30 @@ export type Env = {
 
 const app = new Hono<{ Bindings: Env }>()
 
+const allowedOrigins = new Set([
+  'https://member.enactusftuhanoi.id.vn',
+  'https://admin.enactusftuhanoi.id.vn',
+  'http://localhost:5173',
+  'http://localhost:5174',
+])
+
 app.use('*', logger())
-app.use('*', cors({
-  origin: [
-    'https://member.enactusftuhanoi.id.vn',
-    'https://admin.enactusftuhanoi.id.vn',
-    'http://localhost:5173',
-    'http://localhost:5174',
-  ],
-  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-}))
+app.use('*', async (c, next) => {
+  const origin = c.req.header('Origin')
+  if (origin && allowedOrigins.has(origin)) {
+    c.header('Access-Control-Allow-Origin', origin)
+    c.header('Vary', 'Origin')
+    c.header('Access-Control-Allow-Credentials', 'true')
+    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
+    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  }
+
+  if (c.req.method === 'OPTIONS') {
+    return c.text('', 204 as any)
+  }
+
+  return await next()
+})
 
 app.get('/health', (c) => c.json({ status: 'ok', env: c.env.ENVIRONMENT }))
 

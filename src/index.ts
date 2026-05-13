@@ -34,6 +34,7 @@ app.use('*', cors({
 app.get('/health', (c) => c.json({ status: 'ok', env: c.env.ENVIRONMENT }))
 
 app.route('/auth', authRoutes)
+app.route('/admin/auth', authRoutes)
 app.route('/members', memberRoutes)
 app.route('/tasks', taskRoutes)
 app.route('/scores', scoreRoutes)

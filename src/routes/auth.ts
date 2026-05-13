@@ -51,6 +51,43 @@ authRoutes.post('/login', async (c) => {
   })
 })
 
+// POST /auth/register
+authRoutes.post('/register', async (c) => {
+  const { email, password, name, role = 'member', department, position, phone, student_id } = await c.req.json()
+  if (!email || !password || !name) {
+    return c.json({ error: 'name, email, password là bắt buộc' }, 400)
+  }
+
+  const allowedRoles = ['member', 'admin', 'super_admin']
+  if (!allowedRoles.includes(role)) {
+    return c.json({ error: 'Role không hợp lệ' }, 400)
+  }
+
+  const existing = await c.env.DB.prepare('SELECT id FROM members WHERE email = ?').bind(email.toLowerCase()).first()
+  if (existing) {
+    return c.json({ error: 'Email đã tồn tại' }, 409)
+  }
+
+  const encoder = new TextEncoder()
+  const salt = crypto.getRandomValues(new Uint8Array(16))
+  const saltB64 = btoa(String.fromCharCode(...salt))
+  const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits'])
+  const derivedBits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    keyMaterial, 256
+  )
+  const hash = btoa(String.fromCharCode(...new Uint8Array(derivedBits)))
+  const passwordHash = `${saltB64}:${hash}`
+
+  const id = crypto.randomUUID()
+  await c.env.DB.prepare(
+    `INSERT INTO members (id, name, email, password_hash, role, department, position, phone, student_id, joined_at, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), 'active')`
+  ).bind(id, name, email.toLowerCase(), passwordHash, role, department || null, position || null, phone || null, student_id || null).run()
+
+  return c.json({ id, name, email: email.toLowerCase(), role }, 201)
+})
+
 // POST /auth/refresh
 authRoutes.post('/refresh', async (c) => {
   const { refreshToken } = await c.req.json()

@@ -24,22 +24,39 @@ const allowedOrigins = new Set([
   'http://localhost:5174',
 ])
 
+function buildCorsHeaders(origin: string, requestHeaders?: string | null) {
+  const headers = new Headers()
+  headers.set('Access-Control-Allow-Origin', origin)
+  headers.set('Vary', 'Origin')
+  headers.set('Access-Control-Allow-Credentials', 'true')
+  headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
+
+  const allowHeaders = requestHeaders?.trim() || 'Content-Type, Authorization'
+  headers.set('Access-Control-Allow-Headers', allowHeaders)
+  return headers
+}
+
 app.use('*', logger())
 app.use('*', async (c, next) => {
   const origin = c.req.header('Origin')
+  const requestHeaders = c.req.header('Access-Control-Request-Headers')
+
   if (origin && allowedOrigins.has(origin)) {
-    c.header('Access-Control-Allow-Origin', origin)
-    c.header('Vary', 'Origin')
-    c.header('Access-Control-Allow-Credentials', 'true')
-    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
-    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+    if (c.req.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: buildCorsHeaders(origin, requestHeaders ?? null),
+      })
+    }
+
+    await next()
+    const corsHeaders = buildCorsHeaders(origin, requestHeaders ?? null)
+    corsHeaders.forEach((value, key) => c.res.headers.set(key, value))
+    return c.res
   }
 
-  if (c.req.method === 'OPTIONS') {
-    return c.text('', 204 as any)
-  }
-
-  return await next()
+  await next()
+  return c.res
 })
 
 app.get('/health', (c) => c.json({ status: 'ok', env: c.env.ENVIRONMENT }))
@@ -53,10 +70,27 @@ app.route('/schedule', scheduleRoutes)
 app.route('/notifications', notificationRoutes)
 app.route('/cnb', cnbRoutes)
 
-app.notFound((c) => c.json({ error: 'Not found' }, 404))
+app.notFound((c) => {
+  const response = c.json({ error: 'Not found' }, 404)
+  const origin = c.req.header('Origin')
+  if (origin && allowedOrigins.has(origin)) {
+    response.headers.set('Access-Control-Allow-Origin', origin)
+    response.headers.set('Vary', 'Origin')
+    response.headers.set('Access-Control-Allow-Credentials', 'true')
+  }
+  return response
+})
+
 app.onError((err, c) => {
   console.error(err)
-  return c.json({ error: 'Internal server error' }, 500)
+  const response = c.json({ error: 'Internal server error' }, 500)
+  const origin = c.req.header('Origin')
+  if (origin && allowedOrigins.has(origin)) {
+    response.headers.set('Access-Control-Allow-Origin', origin)
+    response.headers.set('Vary', 'Origin')
+    response.headers.set('Access-Control-Allow-Credentials', 'true')
+  }
+  return response
 })
 
 export default app

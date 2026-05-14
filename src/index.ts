@@ -7,6 +7,8 @@ import { scoreRoutes } from './routes/scores'
 import { scheduleRoutes } from './routes/schedule'
 import { notificationRoutes } from './routes/notifications'
 import { cnbRoutes } from './routes/cnb'
+import { formRoutes } from './routes/forms'
+import { badgeRoutes } from './routes/badges'
 
 export type Env = {
   DB: D1Database
@@ -64,6 +66,8 @@ app.route('/scores', scoreRoutes)
 app.route('/schedule', scheduleRoutes)
 app.route('/notifications', notificationRoutes)
 app.route('/cnb', cnbRoutes)
+app.route('/forms', formRoutes)
+app.route('/badges', badgeRoutes)
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404))
 app.onError((err, c) => {

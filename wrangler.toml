@@ -17,7 +17,7 @@ id = "296905cec1dc41678096767e535115ee"         # Replace after: wrangler kv:nam
 
 [secrets]
 # Set via: wrangler secret put JWT_SECRET
-# JWT_SECRET = "your-super-secret-key-min-32-chars"
+# JWT_SECRET=EnactusFTU@Hanoi2025!XK#9mPqR$vL
 
 [[routes]]
 pattern = "api.enactusftuhanoi.id.vn/*"

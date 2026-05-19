@@ -25,19 +25,30 @@ taskRoutes.get('/', authMiddleware, async (c) => {
   return c.json(results)
 })
 
+// GET /tasks/all — admin lấy tất cả tasks (không filter)
+taskRoutes.get('/all', adminMiddleware, async (c) => {
+  const { results } = await c.env.DB.prepare(`
+    SELECT t.*, m.name as assignee_name 
+    FROM tasks t 
+    LEFT JOIN members m ON t.assigned_to = m.id 
+    ORDER BY t.created_at DESC
+  `).all()
+  return c.json(results)
+})
+
 // POST /tasks — admin only
 taskRoutes.post('/', adminMiddleware, async (c) => {
-  const { title, description, assigned_to, due_date, project, priority = 'medium', points = 10 } = await c.req.json()
+  const { title, description, assigned_to, due_date, project, priority = 'medium', points = 10, status = 'todo', note } = await c.req.json()
   if (!title || !assigned_to) return c.json({ error: 'title và assigned_to là bắt buộc' }, 400)
 
   const id = crypto.randomUUID()
   const payload = c.get('jwtPayload' as never) as any
   await c.env.DB.prepare(
-    `INSERT INTO tasks (id, title, description, assigned_to, created_by, due_date, project, priority, points, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'todo', datetime('now'))`
-  ).bind(id, title, description || null, assigned_to, payload.sub, due_date || null, project || null, priority, points).run()
+    `INSERT INTO tasks (id, title, description, assigned_to, created_by, due_date, project, priority, points, status, note, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+  ).bind(id, title, description || null, assigned_to, payload.sub, due_date || null, project || null, priority, points, status, note || null).run()
 
-  return c.json({ id, title, assigned_to, status: 'todo' }, 201)
+  return c.json({ id, title, assigned_to, status }, 201)
 })
 
 // PATCH /tasks/:id
@@ -54,7 +65,7 @@ taskRoutes.patch('/:id', authMiddleware, async (c) => {
 
   if (!isAdmin && !isAssignee) return c.json({ error: 'Forbidden' }, 403)
 
-  const allowed = isAdmin ? ['title', 'description', 'assigned_to', 'due_date', 'project', 'priority', 'points', 'status'] : ['status', 'note']
+  const allowed = isAdmin ? ['title', 'description', 'assigned_to', 'due_date', 'project', 'priority', 'points', 'status', 'note'] : ['status', 'note']
   const fields = Object.keys(body).filter(k => allowed.includes(k))
   if (fields.length === 0) return c.json({ error: 'No valid fields' }, 400)
 
@@ -62,4 +73,11 @@ taskRoutes.patch('/:id', authMiddleware, async (c) => {
   const values = fields.map(f => body[f])
   await c.env.DB.prepare(`UPDATE tasks SET ${setClauses}, updated_at = datetime('now') WHERE id = ?`).bind(...values, id).run()
   return c.json({ message: 'Updated' })
+})
+
+// DELETE /tasks/:id — admin only
+taskRoutes.delete('/:id', adminMiddleware, async (c) => {
+  const id = c.req.param('id')
+  await c.env.DB.prepare('DELETE FROM tasks WHERE id = ?').bind(id).run()
+  return c.json({ message: 'Deleted' })
 })

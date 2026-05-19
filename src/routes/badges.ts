@@ -15,6 +15,19 @@ badgeRoutes.get('/', authMiddleware, async (c) => {
   })))
 })
 
+// GET /badges/my — lấy badges của member hiện tại (cho member-app)
+badgeRoutes.get('/my', authMiddleware, async (c) => {
+  const payload = getPayload(c)
+  const { results } = await c.env.DB.prepare(`
+    SELECT b.*, mb.awarded_at, mb.note 
+    FROM badges b
+    JOIN member_badges mb ON b.id = mb.badge_id
+    WHERE mb.member_id = ?
+    ORDER BY mb.awarded_at DESC
+  `).bind(payload.sub).all()
+  return c.json(results)
+})
+
 // GET /badges/:id
 badgeRoutes.get('/:id', authMiddleware, async (c) => {
   const badge = await c.env.DB.prepare('SELECT * FROM badges WHERE id = ?').bind(c.req.param('id')).first<any>()
@@ -35,6 +48,26 @@ badgeRoutes.post('/', adminMiddleware, async (c) => {
   ).bind(id, name, description||null, icon, color, criteria ? JSON.stringify(criteria) : null).run()
 
   return c.json({ id, name, icon }, 201)
+})
+
+// POST /badges/:id/award — admin award badge (format frontend mong đợi)
+badgeRoutes.post('/:id/award', adminMiddleware, async (c) => {
+  const payload = getPayload(c)
+  const badgeId = c.req.param('id')
+  const { member_id, note } = await c.req.json()
+  
+  if (!member_id) return c.json({ error: 'Thiếu member_id' }, 400)
+
+  const id = crypto.randomUUID()
+  try {
+    await c.env.DB.prepare(
+      `INSERT OR IGNORE INTO member_badges (id, member_id, badge_id, awarded_by, note, awarded_at)
+       VALUES (?, ?, ?, ?, ?, datetime('now'))`
+    ).bind(id, member_id, badgeId, payload.sub, note || null).run()
+    return c.json({ success: true, message: 'Badge awarded' }, 201)
+  } catch (e) {
+    return c.json({ error: 'Failed to award badge' }, 400)
+  }
 })
 
 // PATCH /badges/:id — admin only
@@ -74,7 +107,7 @@ badgeRoutes.get('/:id/members', adminMiddleware, async (c) => {
   return c.json(results)
 })
 
-// POST /members/:memberId/badges/:badgeId — admin award badge
+// POST /members/:memberId/badge/:badgeId — admin award badge (cách cũ, giữ lại cho tương thích)
 badgeRoutes.post('/member/:memberId/badge/:badgeId', adminMiddleware, async (c) => {
   const payload = getPayload(c)
   const memberId = c.req.param('memberId')
@@ -93,7 +126,7 @@ badgeRoutes.post('/member/:memberId/badge/:badgeId', adminMiddleware, async (c) 
   }
 })
 
-// DELETE /members/:memberId/badges/:badgeId — admin revoke badge
+// DELETE /members/:memberId/badge/:badgeId — admin revoke badge
 badgeRoutes.delete('/member/:memberId/badge/:badgeId', adminMiddleware, async (c) => {
   const memberId = c.req.param('memberId')
   const badgeId = c.req.param('badgeId')

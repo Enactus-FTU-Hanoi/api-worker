@@ -61,6 +61,10 @@ export async function authMiddleware(c: Context<{ Bindings: Env }>, next: Next) 
   await next()
 }
 
+export function getPayload(c: Context): JWTPayload {
+  return c.get('jwtPayload' as never) as JWTPayload
+}
+
 export async function adminMiddleware(c: Context<{ Bindings: Env }>, next: Next) {
   const auth = c.req.header('Authorization')
   if (!auth?.startsWith('Bearer ')) {

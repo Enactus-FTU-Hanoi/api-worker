@@ -4,6 +4,19 @@ import { authMiddleware, adminMiddleware } from '../middleware/auth'
 
 export const taskRoutes = new Hono<{ Bindings: Env }>()
 
+// GET /tasks — lấy tasks của member hiện tại
+taskRoutes.get('/tasks', authMiddleware, async (c) => {
+  const payload = c.get('jwtPayload' as never) as any
+  const { results } = await c.env.DB.prepare(`
+    SELECT t.*, m.name as assignee_name 
+    FROM tasks t 
+    LEFT JOIN members m ON t.assigned_to = m.id 
+    WHERE t.assigned_to = ?
+    ORDER BY t.due_date ASC
+  `).bind(payload.sub).all()
+  return c.json(results)
+})
+
 // GET /tasks — lấy tasks của mình (member) hoặc tất cả (admin)
 taskRoutes.get('/', authMiddleware, async (c) => {
   const payload = c.get('jwtPayload' as never) as any
@@ -25,7 +38,7 @@ taskRoutes.get('/', authMiddleware, async (c) => {
   return c.json(results)
 })
 
-// GET /tasks/all — admin lấy tất cả tasks (không filter)
+// GET /tasks/all — admin lấy tất cả tasks
 taskRoutes.get('/all', adminMiddleware, async (c) => {
   const { results } = await c.env.DB.prepare(`
     SELECT t.*, m.name as assignee_name 
@@ -58,7 +71,6 @@ taskRoutes.patch('/:id', authMiddleware, async (c) => {
   const task = await c.env.DB.prepare('SELECT * FROM tasks WHERE id = ?').bind(id).first<any>()
   if (!task) return c.json({ error: 'Task not found' }, 404)
 
-  // Members can only update status of their own tasks
   const body = await c.req.json()
   const isAdmin = ['admin', 'super_admin'].includes(payload.role)
   const isAssignee = task.assigned_to === payload.sub

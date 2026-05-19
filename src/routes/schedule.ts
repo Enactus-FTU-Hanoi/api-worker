@@ -11,7 +11,6 @@ scheduleRoutes.get('/polls', authMiddleware, async (c) => {
     "SELECT * FROM schedule_polls WHERE status = 'open' ORDER BY created_at DESC"
   ).all()
   
-  // Lấy votes của member hiện tại cho các poll này
   const myVotes: Record<string, string> = {}
   const voteResults = await c.env.DB.prepare(
     'SELECT poll_id, available_slots FROM schedule_votes WHERE member_id = ?'
@@ -19,21 +18,42 @@ scheduleRoutes.get('/polls', authMiddleware, async (c) => {
   
   for (const vote of voteResults.results) {
     const slots = JSON.parse(vote.available_slots || '[]')
-    if (slots.length > 0) myVotes[vote.poll_id] = slots[0] // lấy slot đầu tiên làm vote hiện tại
+    if (slots.length > 0) myVotes[vote.poll_id] = slots[0]
   }
   
   return c.json({ polls: results, myVotes })
 })
 
-// GET /schedule/polls/all — admin xem tất cả
-scheduleRoutes.get('/polls/all', adminMiddleware, async (c) => {
-  const { results } = await c.env.DB.prepare(
-    'SELECT * FROM schedule_polls ORDER BY created_at DESC'
-  ).all()
+// GET /schedule/polls/all — cho phép member xem poll đang mở, admin xem tất cả
+scheduleRoutes.get('/polls/all', authMiddleware, async (c) => {
+  const payload = getPayload(c)
+  const isAdmin = ['admin', 'super_admin'].includes(payload.role)
+  
+  let query = 'SELECT * FROM schedule_polls'
+  if (!isAdmin) {
+    query += " WHERE status = 'open'"
+  }
+  query += ' ORDER BY created_at DESC'
+  
+  const { results } = await c.env.DB.prepare(query).all()
+  
+  const { results: votes } = await c.env.DB.prepare(
+    'SELECT poll_id, available_slots FROM schedule_votes WHERE member_id = ?'
+  ).bind(payload.sub).all<any>()
+  
+  const myVotes: Record<string, string> = {}
+  for (const vote of votes) {
+    const slots = JSON.parse(vote.available_slots || '[]')
+    if (slots.length > 0) myVotes[vote.poll_id] = slots[0]
+  }
+  
+  if (!isAdmin) {
+    return c.json({ polls: results, myVotes })
+  }
   return c.json(results)
 })
 
-// GET /schedule/my-votes — lấy votes của member hiện tại (cho member-app)
+// GET /schedule/my-votes — lấy votes của member hiện tại
 scheduleRoutes.get('/my-votes', authMiddleware, async (c) => {
   const payload = getPayload(c)
   const { results } = await c.env.DB.prepare(
@@ -74,19 +94,17 @@ scheduleRoutes.patch('/polls/:id', adminMiddleware, async (c) => {
 // DELETE /schedule/polls/:id
 scheduleRoutes.delete('/polls/:id', adminMiddleware, async (c) => {
   const id = c.req.param('id')
-  // Xóa cả votes liên quan
   await c.env.DB.prepare('DELETE FROM schedule_votes WHERE poll_id = ?').bind(id).run()
   await c.env.DB.prepare('DELETE FROM schedule_polls WHERE id = ?').bind(id).run()
   return c.json({ message: 'Deleted' })
 })
 
-// POST /schedule/vote — member vote (endpoint mới, đơn giản hơn)
+// POST /schedule/vote — member vote
 scheduleRoutes.post('/vote', authMiddleware, async (c) => {
   const payload = getPayload(c)
   const { poll_id, slot } = await c.req.json()
   if (!poll_id || !slot) return c.json({ error: 'Thiếu poll_id hoặc slot' }, 400)
   
-  // Kiểm tra poll có tồn tại và đang mở không
   const poll = await c.env.DB.prepare('SELECT * FROM schedule_polls WHERE id = ? AND status = ?').bind(poll_id, 'open').first()
   if (!poll) return c.json({ error: 'Poll không tồn tại hoặc đã đóng' }, 404)
   
@@ -97,13 +115,12 @@ scheduleRoutes.post('/vote', authMiddleware, async (c) => {
   return c.json({ message: 'Vote saved', slot })
 })
 
-// POST /schedule/polls/:id/vote — member vote (cách cũ, giữ lại cho tương thích)
+// POST /schedule/polls/:id/vote — member vote (cách cũ)
 scheduleRoutes.post('/polls/:id/vote', authMiddleware, async (c) => {
   const payload = getPayload(c)
   const pollId = c.req.param('id')
   const { available_slots } = await c.req.json()
   
-  // Kiểm tra poll có tồn tại và đang mở không
   const poll = await c.env.DB.prepare('SELECT * FROM schedule_polls WHERE id = ? AND status = ?').bind(pollId, 'open').first()
   if (!poll) return c.json({ error: 'Poll không tồn tại hoặc đã đóng' }, 404)
   
@@ -113,13 +130,12 @@ scheduleRoutes.post('/polls/:id/vote', authMiddleware, async (c) => {
   return c.json({ message: 'Vote saved' })
 })
 
-// GET /schedule/polls/:id/results — admin xem kết quả (có thể cho member xem nếu poll đã đóng)
+// GET /schedule/polls/:id/results — xem kết quả
 scheduleRoutes.get('/polls/:id/results', authMiddleware, async (c) => {
   const pollId = c.req.param('id')
   const poll = await c.env.DB.prepare('SELECT * FROM schedule_polls WHERE id = ?').bind(pollId).first<any>()
   if (!poll) return c.json({ error: 'Not found' }, 404)
   
-  // Member chỉ xem được kết quả nếu poll đã đóng
   const payload = getPayload(c)
   const isAdmin = ['admin', 'super_admin'].includes(payload.role)
   if (!isAdmin && poll.status === 'open') {

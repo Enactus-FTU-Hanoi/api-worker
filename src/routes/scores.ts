@@ -2,8 +2,16 @@ import { Hono } from 'hono'
 import { Env } from '../index'
 import { authMiddleware, adminMiddleware } from '../middleware/auth'
 
-// ─── SCORES ────────────────────────────────────────────────────────────────
 export const scoreRoutes = new Hono<{ Bindings: Env }>()
+
+// GET /scores — lấy scores của member hiện tại
+scoreRoutes.get('/scores', authMiddleware, async (c) => {
+  const payload = c.get('jwtPayload' as never) as any
+  const { results } = await c.env.DB.prepare(`
+    SELECT * FROM scores WHERE member_id = ? ORDER BY period DESC, created_at DESC
+  `).bind(payload.sub).all()
+  return c.json(results)
+})
 
 // GET /scores — lấy scores của member (member) hoặc theo member_id (admin)
 scoreRoutes.get('/', authMiddleware, async (c) => {
@@ -18,7 +26,7 @@ scoreRoutes.get('/', authMiddleware, async (c) => {
   return c.json(results)
 })
 
-// GET /scores/all — admin lấy tất cả scores (kèm tên member)
+// GET /scores/all — admin lấy tất cả scores
 scoreRoutes.get('/all', adminMiddleware, async (c) => {
   const { results } = await c.env.DB.prepare(`
     SELECT s.*, m.name as member_name 
@@ -48,12 +56,11 @@ scoreRoutes.delete('/:id', adminMiddleware, async (c) => {
   return c.json({ message: 'Deleted' })
 })
 
-// GET /scores/summary — lấy tổng kết điểm
+// GET /scores/summary
 scoreRoutes.get('/summary', authMiddleware, async (c) => {
   const payload = c.get('jwtPayload' as never) as any
   const { period } = c.req.query()
   
-  // Nếu là member, chỉ lấy điểm của mình
   if (payload.role === 'member') {
     const query = period
       ? 'SELECT SUM(score) as total, COUNT(*) as count, period FROM scores WHERE member_id = ? AND period = ? GROUP BY period'
@@ -63,7 +70,6 @@ scoreRoutes.get('/summary', authMiddleware, async (c) => {
     return c.json(result || { total: 0, count: 0 })
   }
   
-  // Admin: lấy tất cả members
   const query = period
     ? 'SELECT member_id, period, SUM(score) as total, COUNT(*) as count FROM scores WHERE period = ? GROUP BY member_id ORDER BY total DESC'
     : 'SELECT member_id, SUM(score) as total, COUNT(*) as count FROM scores GROUP BY member_id ORDER BY total DESC'

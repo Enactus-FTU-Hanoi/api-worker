@@ -15,7 +15,7 @@ badgeRoutes.get('/', authMiddleware, async (c) => {
   })))
 })
 
-// GET /badges/my — lấy badges của member hiện tại (cho member-app)
+// GET /badges/my — lấy badges của member hiện tại
 badgeRoutes.get('/my', authMiddleware, async (c) => {
   const payload = getPayload(c)
   const { results } = await c.env.DB.prepare(`
@@ -107,7 +107,7 @@ badgeRoutes.get('/:id/members', adminMiddleware, async (c) => {
   return c.json(results)
 })
 
-// POST /members/:memberId/badge/:badgeId — admin award badge (cách cũ, giữ lại cho tương thích)
+// POST /members/:memberId/badge/:badgeId — admin award badge (cách cũ)
 badgeRoutes.post('/member/:memberId/badge/:badgeId', adminMiddleware, async (c) => {
   const payload = getPayload(c)
   const memberId = c.req.param('memberId')

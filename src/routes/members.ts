@@ -15,7 +15,6 @@ memberRoutes.get('/', authMiddleware, async (c) => {
   const bindings: string[] = []
 
   if (payload.role === 'member') {
-    // Members chỉ xem được danh sách cơ bản
     query = `SELECT id, name, email, role, photo_url, department, position,
       generation, bio, joined_at, status FROM members WHERE status = 'ACTIVE'`
   } else {
@@ -29,6 +28,49 @@ memberRoutes.get('/', authMiddleware, async (c) => {
   query += ' ORDER BY joined_at DESC'
   const { results } = await c.env.DB.prepare(query).bind(...bindings).all()
   return c.json(results)
+})
+
+// GET /members/profile — lấy profile của member hiện tại
+memberRoutes.get('/profile', authMiddleware, async (c) => {
+  const payload = getPayload(c)
+  const member = await c.env.DB.prepare(`
+    SELECT id, name, email, role, photo_url, department, position, generation,
+    dob, phone, student_id, facebook_url, linkedin_url, bio, joined_at, status
+    FROM members WHERE id = ?
+  `).bind(payload.sub).first()
+  if (!member) return c.json({ error: 'Not found' }, 404)
+  
+  // Lấy tổng điểm và số task hoàn thành
+  const pointsResult = await c.env.DB.prepare(`
+    SELECT COALESCE(SUM(points), 0) as total_points, COUNT(*) as completed_tasks
+    FROM tasks WHERE assigned_to = ? AND status = 'done'
+  `).bind(payload.sub).first<any>()
+  
+  return c.json({ 
+    ...member, 
+    total_points: pointsResult?.total_points || 0,
+    completed_tasks: pointsResult?.completed_tasks || 0
+  })
+})
+
+// PATCH /members/profile — cập nhật profile của member hiện tại
+memberRoutes.patch('/profile', authMiddleware, async (c) => {
+  const payload = getPayload(c)
+  const body = await c.req.json()
+  const allowed = ['phone', 'bio', 'facebook_url', 'linkedin_url', 'photo_url']
+  const fields = Object.keys(body).filter(k => allowed.includes(k))
+  if (fields.length === 0) return c.json({ error: 'No valid fields' }, 400)
+  
+  const setClauses = fields.map(f => `${f} = ?`).join(', ')
+  await c.env.DB.prepare(`UPDATE members SET ${setClauses}, updated_at = datetime('now') WHERE id = ?`)
+    .bind(...fields.map(f => body[f]), payload.sub).run()
+  
+  const updated = await c.env.DB.prepare(`
+    SELECT id, name, email, role, photo_url, department, position, generation,
+    dob, phone, student_id, facebook_url, linkedin_url, bio, joined_at, status
+    FROM members WHERE id = ?
+  `).bind(payload.sub).first()
+  return c.json(updated)
 })
 
 // GET /members/stats — admin only
@@ -63,7 +105,6 @@ memberRoutes.get('/:id', authMiddleware, async (c) => {
   ).bind(id).first()
   if (!member) return c.json({ error: 'Not found' }, 404)
 
-  // Lấy badges
   const { results: badges } = await c.env.DB.prepare(
     `SELECT b.*, mb.awarded_at, mb.note FROM badges b
      JOIN member_badges mb ON b.id = mb.badge_id
@@ -101,7 +142,6 @@ memberRoutes.post('/', adminMiddleware, async (c) => {
     position||null, phone||null, student_id||null, generation||null,
     dob||null, facebook_url||null, linkedin_url||null, bio||null).run()
 
-  // Auto-award "Thành viên mới" badge
   await c.env.DB.prepare(
     `INSERT OR IGNORE INTO member_badges (id, member_id, badge_id, awarded_at)
      VALUES (?, ?, 'badge-001', datetime('now'))`
@@ -153,4 +193,3 @@ memberRoutes.post('/:id/badges', adminMiddleware, async (c) => {
   ).bind(id, c.req.param('id'), badge_id, payload.sub, note||null).run()
   return c.json({ message: 'Badge awarded' }, 201)
 })
-

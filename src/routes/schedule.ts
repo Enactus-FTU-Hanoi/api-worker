@@ -4,7 +4,7 @@ import { authMiddleware, adminMiddleware, getPayload } from '../middleware/auth'
 
 export const scheduleRoutes = new Hono<{ Bindings: Env }>()
 
-// GET /schedule/polls — member xem polls đang mở
+// GET /schedule/polls — member xem polls đang mở (trả về object { polls, myVotes })
 scheduleRoutes.get('/polls', authMiddleware, async (c) => {
   const payload = getPayload(c)
   const { results } = await c.env.DB.prepare(
@@ -24,7 +24,7 @@ scheduleRoutes.get('/polls', authMiddleware, async (c) => {
   return c.json({ polls: results, myVotes })
 })
 
-// GET /schedule/polls/all — cho phép member xem poll đang mở, admin xem tất cả
+// GET /schedule/polls/all — ADMIN trả về array, MEMBER trả về object { polls, myVotes }
 scheduleRoutes.get('/polls/all', authMiddleware, async (c) => {
   const payload = getPayload(c)
   const isAdmin = ['admin', 'super_admin'].includes(payload.role)
@@ -37,6 +37,12 @@ scheduleRoutes.get('/polls/all', authMiddleware, async (c) => {
   
   const { results } = await c.env.DB.prepare(query).all()
   
+  // ADMIN: trả về array trực tiếp
+  if (isAdmin) {
+    return c.json(results)
+  }
+  
+  // MEMBER: trả về object { polls, myVotes }
   const { results: votes } = await c.env.DB.prepare(
     'SELECT poll_id, available_slots FROM schedule_votes WHERE member_id = ?'
   ).bind(payload.sub).all<any>()
@@ -47,10 +53,7 @@ scheduleRoutes.get('/polls/all', authMiddleware, async (c) => {
     if (slots.length > 0) myVotes[vote.poll_id] = slots[0]
   }
   
-  if (!isAdmin) {
-    return c.json({ polls: results, myVotes })
-  }
-  return c.json(results)
+  return c.json({ polls: results, myVotes })
 })
 
 // GET /schedule/my-votes — lấy votes của member hiện tại

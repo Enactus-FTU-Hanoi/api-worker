@@ -4,29 +4,31 @@ import { authMiddleware, adminMiddleware } from '../middleware/auth'
 
 export const scoreRoutes = new Hono<{ Bindings: Env }>()
 
-// GET /scores — lấy scores của member hiện tại
-scoreRoutes.get('/scores', authMiddleware, async (c) => {
-  const payload = c.get('jwtPayload' as never) as any
-  const { results } = await c.env.DB.prepare(`
-    SELECT * FROM scores WHERE member_id = ? ORDER BY period DESC, created_at DESC
-  `).bind(payload.sub).all()
-  return c.json(results)
-})
-
-// GET /scores — lấy scores của member (member) hoặc theo member_id (admin)
+// GET /scores — lấy scores của member hiện tại (member) hoặc theo member_id (admin)
 scoreRoutes.get('/', authMiddleware, async (c) => {
   const payload = c.get('jwtPayload' as never) as any
   const { member_id, period } = c.req.query()
-  const targetId = payload.role === 'member' ? payload.sub : (member_id || payload.sub)
+  
+  // Nếu là member, chỉ lấy của mình
+  if (payload.role === 'member') {
+    const { results } = await c.env.DB.prepare(`
+      SELECT * FROM scores WHERE member_id = ? ORDER BY period DESC, created_at DESC
+    `).bind(payload.sub).all()
+    return c.json(results)
+  }
+  
+  // Admin: lấy theo member_id hoặc tất cả
+  const targetId = member_id || payload.sub
   let query = 'SELECT * FROM scores WHERE member_id = ?'
   const bindings: string[] = [targetId]
   if (period) { query += ' AND period = ?'; bindings.push(period) }
   query += ' ORDER BY period DESC, created_at DESC'
+  
   const { results } = await c.env.DB.prepare(query).bind(...bindings).all()
   return c.json(results)
 })
 
-// GET /scores/all — admin lấy tất cả scores
+// GET /scores/all — admin lấy tất cả scores (kèm tên member)
 scoreRoutes.get('/all', adminMiddleware, async (c) => {
   const { results } = await c.env.DB.prepare(`
     SELECT s.*, m.name as member_name 
